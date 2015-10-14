@@ -2,15 +2,16 @@
 --
     import "github.com/polyverse-security/appconfig"
 
-Specify configuration parameters for your application and this package will grab
-the values in the following order, each overriding the previous: (1) default
-value (specified in your code), (2) configuration file, (3) environmental
-variable and (4) command-line. You can also specify additional properties for
-each parameter (e.g., default value, required, type).
+This package enables you to easily define configuration parameters for your
+application and then handles the collection of parameter values automatically in
+the following order, each overriding the previous (if a value is specified): (1)
+default value (in code), (2) configuration file, (3) environmental variable and
+(4) command-line. You can also set properties for each parameter (e.g., default
+value, is required, value type).
 
-Additionally, you can specify the root node of the configuration file which will
+Additionally, you can specify the root node in the configuration file which will
 allow the same configuration file to contain configuration data for multiple
-applications and/or multiple configurations.
+applications and/or configurations.
 
 A full example implementation is available in example/.
 
