@@ -1,19 +1,16 @@
-// This package makes it easy to define paramaters that your application accepts
-// and supports default values and usage like Go's flag package but also allows
-// you to specify type and whether the parameter is required.
-//
-// Once you define the paramters, this package will take the default value
-// you specified and then override that value in the following order:
-// 1. JSON configuration file
-// 2. environmental variables
-// 3. command-line
+// Specify configuration parameters for your application and this package will
+// grab the values in the following order, each overriding the previous:
+// (1) default value (specified in your code), (2) configuration file,
+// (3) environmental variable and (4) command-line. You can also specify
+// additional properties for each parameter (e.g., default value, required,
+// type).
 //
 // Additionally, you can specify the root node of the configuration file which
 // will allow the same configuration file to contain configuration data for
-// multiple applications.
+// multiple applications and/or multiple configurations.
 //
 // A full example implementation is available in example/.
-package simpleconfig
+package appconfig
 
 import "fmt"
 import "os"
@@ -21,7 +18,9 @@ import "strings"
 import "strconv"
 import "reflect"
 import "encoding/json"
-import log "github.com/Sirupsen/logrus"
+import "log/syslog"
+
+const default_prefix = "-"
 
 // ParamType is an optional property of the Param struct. If ommitted, there
 // is no type-checking of the parameter value.
@@ -29,15 +28,13 @@ type ParamType int
 
 // Constants for the ParamType type.
 const (
-  PARAM_STRING ParamType = iota
-  PARAM_INT
-  PARAM_BOOL
-  PARAM_OBJECT
-  PARAM_CONFIG_JSON
-  PARAM_CONFIG_NODE
+  PARAM_STRING ParamType = iota // Currently a noop
+  PARAM_INT         // Converts environmental variables and command-line values from string to int
+  PARAM_BOOL        // Converts environmental variables and command-line values from string to bool
+  PARAM_OBJECT      // Currently a noop
+  PARAM_CONFIG_JSON // Value represents the JSON config file.
+  PARAM_CONFIG_NODE // Specifies a different "root node" in the config file.
 )
-
-const default_prefix = "-"
 
 // This is the struct you use to specify the properties of each parameter.
 // The `NewConfig(params map[string]Param) (Config, err)` expects you to pass
@@ -45,15 +42,16 @@ const default_prefix = "-"
 //
 // None of the fields are required.
 type Param struct {
-  Type ParamType // if ommited, default is 0 an no type-checking will be performed.
-  Default interface{} // if ommited, the default value is nil.
-  Usage string // if ommitted, no usage will be provided for this parameter when calling `PrintUsage(message string)`
-  Required bool // if ommitted, default is false
-  PrefixOverride string // if ommitted, default is "-"
+  Type ParamType        // Use if you want explicit type conversion
+  Default interface{}   // Default value. If ommited, default value is nil.
+  Usage string          // Description of param. Used by `PrintUsage(message string)`
+  Required bool         // Is the parameter required? Default is false.
+  PrefixOverride string // Override the argument identifying prefix. Default is "-".
 }
 
 // This is the object that's returned from NewConfig() and provides methods
-// such as `Get(key string) interface{}` (retrieve values) and `PrintUsage(message string)`.
+// such as `Get(key string) interface{}` (retrieve values) and
+// `PrintUsage(message string)`.
 type Config struct {
   values map[string]interface{}
   params map[string]Param
@@ -62,14 +60,20 @@ type Config struct {
 // This is a helper function that returns the parameter name prepended with
 // the proper switch prefix. The default prefix is "-" but you can override that
 // with Param.PrefixOverride. Since the prefixes are stripped and the name used
-// as the key for the paramters map, this helper function allows you to reconstruct
-// the command-line switch.
-func (c *Config) GetKeyWithPrefix(key string) string {
-  prefix := c.params[key].PrefixOverride
-  if prefix == "" {
-    prefix = default_prefix
+// as the key for the paramters map, this helper function allows you to
+// reconstruct the command-line switch.
+func (c *Config) GetKeysWithPrefix() map[string]string {
+  keys := make(map[string]string)
+  for param := range c.params {
+    prefix := c.params[param].PrefixOverride
+    if prefix == "" {
+      prefix = default_prefix
+    }
+    keys[param] = prefix + param
+    //fmt.Printf("keys[param] = %s\n", prefix + param)
   }
-  return prefix + key
+
+  return keys
 }
 
 // This is a helper function that returns a string array of all parameter names
@@ -84,45 +88,55 @@ func (c *Config) GetParamKeysByType(paramType ParamType) []string {
   }
   return returnParams
 }
-// Create a new map[string]Param and then populate it with the parameters you
-// want your application to accept.
+// Create a new `map[string]Param` and then add the parameters you want your
+// application to support.
 //
 // Example:
 //
-//   ```
 //   params := make(map[string]cnf.Param)
 //   params["config"] = simpleconfig.Param{Type:cnf.PARAM_CONFIG_JSON, Default:"polyverse.json", Usage:"JSON configuration file.", Required:false}
 //   params["proxy-addr"] = cnf.Param{Default:":8080", Usage:"List to [address]:port.", Required:true}
 //   params["statsd_addr"] = cnf.Param{Usage:"StatsD address:port."}
 //   config := NewConfig(params)
-//   ```
 //
-// There are a lot of `logrus.Debugf()` statements that will be output if
-// loglevel is set to `log.DebugLevel`. The debug output will tell you exactly
-// where the values are taken from.
+// There are a lot of debug-level messages sent to syslog.
+//
+// On MacOS, add the following to /etc/asl.conf to capture the debug messages:
+//
+// ```
+// # Rules for /var/log/appconfig.log
+// > appconfig.log mode=0640 format=std rotate=seq compress file_max=1M all_max=3M debug=1
+// ? [= Sender appconfig] [<= Level debug] file appconfig.log
+// ```
 func NewConfig(params map[string]Param) (Config, error) {
+  logger, err := syslog.New(syslog.LOG_INFO, "appconfig")
+  if err != nil {
+    return Config{}, err
+  }
   config := Config{make(map[string]interface{}),params}
 
   args := make(map[string]string)
 
   // Make a map of the environmental variables
-  log.Debug("Checking environmental variables...")
+  if err := logger.Debug("Checking environmental variables..."); err != nil {
+    fmt.Printf("err: %s", err)
+  }
   for param := range params {
     val := os.Getenv(param)
     if val != "" {
       args[param] = os.Getenv(param)
-      log.Debugf("----> Found match: %s = %s", param, args[param])
+      logger.Debug(fmt.Sprintf("----> Found match: %s = %s", param, args[param]))
     }
   }
-  log.Debugf("--> Done. Environmental variables: %v", args)
+  logger.Debug(fmt.Sprintf("--> Done. Environmental variables: %v", args))
 
   // Make a map of the command-line arguments
-  log.Debugf("Processing command-line arguments: %v", os.Args[1:])
+  logger.Debug(fmt.Sprintf("Processing command-line arguments: %v", os.Args[1:]))
 
   // enumerate the command-line arguments
   for i := 1; i <= len(os.Args[1:]); i++ {
     // compare each argument with list of supported paramters
-    log.Debugf("--> Process argument: %s", os.Args[i])
+    logger.Debug(fmt.Sprintf("--> Process argument: %s", os.Args[i]))
     match := false // flag to specify whether argument was found in list of supported paramters
     for param := range params {
       kv := strings.Split(os.Args[i], "=") // split the argument into key + value
@@ -135,21 +149,22 @@ func NewConfig(params map[string]Param) (Config, error) {
         // set the kv pair in the args map
         match = true
         if len(kv) == 1 {
-          args[arg] = "true" // if value isn't provided, default to true
+          args[arg] = "true" // if value isn't provided, default to "true"
         } else {
           args[arg] = kv[1]
         }
-        log.Debugf("----> Found match: %s = %s", param, args[arg])
+        logger.Debug(fmt.Sprintf("----> Found match: %s = %s", param, args[arg]))
         break
       }
     }
     if !match {
-      log.Debugf("----> No match.")
+      logger.Debug("----> No match.")
       err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
+      logger.Err(err.Error()) // send to syslog
       return config, err
     }
   }
-  log.Debugf("--> Done. Environment variables + command-line arguments overrides: %v", args)
+  logger.Debug(fmt.Sprintf("--> Done. Environment variables + command-line arguments overrides: %v", args))
 
   configJson := args[config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]]
   if configJson == "" {
@@ -162,51 +177,52 @@ func NewConfig(params map[string]Param) (Config, error) {
 
   jsonvals := make(map[string]interface{})
   if configJson != "" {
-    log.Debugf("Reading config file: file = %s, node = %s", configJson, configNode)
+    logger.Debug(fmt.Sprintf("Reading config file: file = %s, node = %s", configJson, configNode))
 
     if f, err := os.Open(configJson); err != nil {
-      log.WithFields(log.Fields{"configJson":configJson}).Errorf("Error opening config file.")
+      logger.Err(err.Error()) // send to syslog
       return config, err
     } else { // opened file successfully
       jsonParser := json.NewDecoder(f)
       if err := jsonParser.Decode(&jsonvals); err != nil {
-        log.WithFields(log.Fields{"configJson":configJson, "Error": err}).Errorf("Error unmarshalling JSON script.")
+        logger.Err(err.Error()) // send to syslog
         return config, err
       }
     }
-    log.WithFields(log.Fields{"JSON":jsonvals}).Debugf("-->Loaded json config file.")
+    logger.Debug(fmt.Sprintf("-->Loaded json config file: %v", jsonvals))
 
     // If a configNode is specified, then the config file is expected to have
     // more info than needed. Set jsonvals to just the portion we're interested in.
     if configNode != "" {
       jsonvals = jsonvals[configNode].(map[string]interface{})
-      log.WithFields(log.Fields{"JSON":jsonvals}).Debugf("-->Trimming JSON based on PARAM_CONFIG_NODE = '%s'", configNode)
+      logger.Debug(fmt.Sprintf("-->Trimming JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, jsonvals))
     }
   } else {
-    log.Debugf("No configuration file specified.")
+    logger.Debug("No configuration file specified.")
   }
 
-  log.Debugf("Finalizing configuration values...")
+  logger.Debug("Finalizing configuration values...")
   for param := range params {
-    log.Debugf("--> Processing param: %s", param)
+    logger.Debug(fmt.Sprintf("--> Processing param: %s", param))
     if params[param].Default != nil {
       config.values[param] = params[param].Default
-      log.Debugf("----> Setting default: %s = %v (type: %s)", param, params[param].Default, reflect.TypeOf(params[param].Default))
+      logger.Debug(fmt.Sprintf("----> Setting default: %s = %v (type: %s)", param, params[param].Default, reflect.TypeOf(params[param].Default)))
     } else {
-      log.Debugf("----> No default value provided.")
+      logger.Debug("----> No default value provided.")
     }
     if jsonvals[param] != nil {
       config.values[param] = jsonvals[param]
-      log.Debugf("----> Config file override: %s = %v (type: %s)", param, jsonvals[param], reflect.TypeOf(jsonvals[param]))
+      logger.Debug(fmt.Sprintf("----> Config file override: %s = %v (type: %s)", param, jsonvals[param], reflect.TypeOf(jsonvals[param])))
     }
     if args[param] != "" {
       config.values[param] = args[param]
-      log.Debugf("----> Environmental and command-line override: %s = %v (type: %s)", param, args[param], reflect.TypeOf(args[param]))
+      logger.Debug(fmt.Sprintf("----> Environmental and command-line override: %s = %v (type: %s)", param, args[param], reflect.TypeOf(args[param])))
     }
 
     if _, ok := config.values[param]; !ok {
       if params[param].Required {
         err := fmt.Errorf("Missing required parameter '%s'.", param)
+        logger.Err(err.Error()) // send to syslog
         return config, err
       }
     }
@@ -215,13 +231,19 @@ func NewConfig(params map[string]Param) (Config, error) {
       case PARAM_BOOL: {
         if reflect.TypeOf(config.values[param]).Name() == "string" {
           config.values[param], _ = strconv.ParseBool(config.values[param].(string))
-          log.Debugf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
+          logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+        }
+      }
+      case PARAM_INT: {
+        if reflect.TypeOf(config.values[param]).Name() == "string" {
+          config.values[param], _ = strconv.Atoi(config.values[param].(string))
+          logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
         }
       }
     }
   }
 
-  log.Debugf("Done. Final config values: %v", config.values)
+  logger.Debug(fmt.Sprintf("Done. Final config values: %v", config.values))
   return config, nil
 }
 
@@ -238,17 +260,19 @@ func (c *Config) Get(key string) interface{} {
 // is the switch (including prefix) and the second is the Usage.
 // You can optionally provide a string that will be prepended to the output.
 func (c *Config) PrintUsage(message string) {
-  fmt.Printf("%sUsage: %s [options]\n", os.Args[0], message)
+  fmt.Printf("%sUsage: %s [options]\n\noptions:\n", message, os.Args[0])
 
   maxlen := 0
-  for param := range c.params {
-    if len(param) > maxlen {
-      maxlen = len(param)
+  keys := c.GetKeysWithPrefix()
+  for key := range keys {
+    if len(key) > maxlen {
+      maxlen = len(key)
+      //fmt.Printf("maxlen is now %v\n", len(key))
     }
   }
 
   for param := range c.params {
-    padded := c.GetKeyWithPrefix(param)
+    padded := keys[param]
     for i := len(padded); i <= maxlen; i++ {
       padded = padded + " "
     }
@@ -258,6 +282,6 @@ func (c *Config) PrintUsage(message string) {
     } else {
       def = ""
     }
-    fmt.Printf("  %s     %s %s\n", padded, c.params[param].Usage, def)
+    fmt.Printf("  %s   %s %s\n", padded, c.params[param].Usage, def)
   }
 }
