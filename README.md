@@ -29,8 +29,8 @@ type Config struct {
 This is the object that's returned from appconfig.NewConfig(). They key methods
 are:
 
-    `Get(key string) interface{} // returns value of parameter key`
-    `PrintUsage(message string)   // prints usage with optional preceeding message`
+    Get(key string) interface{} // returns value of parameter key
+    PrintUsage(message string)   // prints usage with optional preceeding message
 
 #### func  NewConfig
 
@@ -52,11 +52,9 @@ There are a lot of debug-level messages sent to syslog.
 
 On MacOS, add the following to /etc/asl.conf to capture the debug messages:
 
-    ```
     # Rules for /var/log/appconfig.log
     > appconfig.log mode=0640 format=std rotate=seq compress file_max=1M all_max=3M debug=1
     ? [= Sender appconfig] [<= Level debug] file appconfig.log
-    ```
 
 #### func (*Config) Get
 
