@@ -2,16 +2,18 @@
 --
     import "github.com/polyverse-security/appconfig"
 
-This package enables you to easily define configuration parameters for your
-application and then handles the collection of parameter values automatically in
-the following order, each overriding the previous (if a value is specified): (1)
-default value (in code), (2) configuration file, (3) environmental variable and
-(4) command-line. You can also set properties for each parameter (e.g., default
-value, required, value type).
+Easily define configuration parameters for your app and this package will
+collect the values in the following order, each overriding the previous if a
+value is provided: (1) code-specified default value, (2) configuration file, (3)
+environmental variables and (4) command-line. A more powerful alternative to
+Go's flag package.
 
-Additionally, you can specify a (different) root node in the configuration file
-which will allow the same configuration file to contain configuration data for
-multiple applications and/or configurations.
+Features: - Automatic support beyond command-line arguments (Go's flag package)
+to configuration files and environmental variables. - Configuration files that
+contain multiple configurations or share configuration data with other apps. -
+Specify whether a parameter is required - Specify a type (e.g., int, bool,
+string) for your parameter - Support for unmarshalled JSON objects as parameter
+### values
 
 A full example implementation is available in example/.
 
@@ -50,9 +52,11 @@ There are a lot of debug-level messages sent to syslog.
 
 On MacOS, add the following to /etc/asl.conf to capture the debug messages:
 
-``` # Rules for /var/log/appconfig.log > appconfig.log mode=0640 format=std
-rotate=seq compress file_max=1M all_max=3M debug=1 ? [= Sender appconfig] [<=
-Level debug] file appconfig.log ```
+    ```
+    # Rules for /var/log/appconfig.log
+    > appconfig.log mode=0640 format=std rotate=seq compress file_max=1M all_max=3M debug=1
+    ? [= Sender appconfig] [<= Level debug] file appconfig.log
+    ```
 
 #### func (*Config) Get
 
