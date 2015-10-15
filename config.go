@@ -28,12 +28,13 @@ type ParamType int
 
 // Constants for the ParamType type.
 const (
-  PARAM_STRING ParamType = iota // Currently a noop
+  PARAM_STRING ParamType = iota // Converts nil to ""
   PARAM_INT         // Converts environmental variables and command-line values from string to int
   PARAM_BOOL        // Converts environmental variables and command-line values from string to bool
   PARAM_OBJECT      // Currently a noop
   PARAM_CONFIG_JSON // Value represents the JSON config file.
   PARAM_CONFIG_NODE // Specifies a different "root node" in the config file.
+  PARAM_USAGE       // Usage flag. Typically -h, -help or --help.
 )
 
 // This is the struct you use to specify the properties of each parameter.
@@ -142,14 +143,14 @@ func NewConfig(params map[string]Param) (Config, error) {
       kv := strings.Split(os.Args[i], "=") // split the argument into key + value
       prefix := default_prefix
       if params[param].PrefixOverride != "" {
-        prefix = params[param].PrefixOverride
+        prefix = params[param].PrefixOverride // prefix override was specified for this parameter. override default prefix.
       }
-      arg := strings.TrimPrefix(kv[0], prefix)
+      arg := strings.TrimPrefix(kv[0], prefix) // strip out the prefix so we can index the map cleanly
       if param == arg {
         // set the kv pair in the args map
         match = true
         if len(kv) == 1 {
-          args[arg] = "true" // if value isn't provided, default to "true"
+          args[arg] = "true" // if value isn't provided, default to true
         } else {
           args[arg] = kv[1]
         }
@@ -166,13 +167,25 @@ func NewConfig(params map[string]Param) (Config, error) {
   }
   logger.Debug(fmt.Sprintf("--> Done. Environment variables + command-line arguments overrides: %v", args))
 
+  // Usage support
+  usageFlags := config.GetParamKeysByType(PARAM_USAGE)
+  for i := 0; i < len(usageFlags); i++ {
+    if args[usageFlags[i]] == "true" {
+      config.values[usageFlags[i]] = true
+      logger.Debug(fmt.Sprintf("PARAM_USAGE flag '%s' set to true. Returning with just this parameter set to true (bool).", usageFlags[i]))
+      return config, nil
+    }
+  }
+  logger.Debug(fmt.Sprintf("usageFlags = %v", usageFlags))
+
   configJson := args[config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]]
   if configJson == "" {
     configJson = params[config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]].Default.(string)
   }
-  configNode := args[config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]]
-  if configNode == "" {
-    configNode = params[config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]].Default.(string)
+  configNodeKey := config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]
+  configNode := args[configNodeKey]
+  if (configNode == "") && (params[configNodeKey].Default != nil){
+    configNode = params[configNodeKey].Default.(string)
   }
 
   jsonvals := make(map[string]interface{})
@@ -225,19 +238,32 @@ func NewConfig(params map[string]Param) (Config, error) {
         logger.Err(err.Error()) // send to syslog
         return config, err
       }
-    }
-
-    switch params[param].Type {
-      case PARAM_BOOL: {
-        if reflect.TypeOf(config.values[param]).Name() == "string" {
-          config.values[param], _ = strconv.ParseBool(config.values[param].(string))
-          logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+      switch params[param].Type {
+        case PARAM_STRING, PARAM_CONFIG_JSON, PARAM_CONFIG_NODE: {
+          config.values[param] = ""
+        }
+        case PARAM_INT: {
+          config.values[param] = 0
+        }
+        case PARAM_BOOL, PARAM_USAGE: {
+          config.values[param] = false
         }
       }
-      case PARAM_INT: {
-        if reflect.TypeOf(config.values[param]).Name() == "string" {
-          config.values[param], _ = strconv.Atoi(config.values[param].(string))
-          logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+    }
+
+    if _, ok := config.values[param]; ok {
+      switch params[param].Type {
+        case PARAM_BOOL: {
+          if reflect.TypeOf(config.values[param]).Name() == "string" {
+            config.values[param], _ = strconv.ParseBool(config.values[param].(string))
+            logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+          }
+        }
+        case PARAM_INT: {
+          if reflect.TypeOf(config.values[param]).Name() == "string" {
+            config.values[param], _ = strconv.Atoi(config.values[param].(string))
+            logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+          }
         }
       }
     }
