@@ -21,7 +21,7 @@ import "strings"
 import "strconv"
 import "reflect"
 import "encoding/json"
-import "log/syslog"
+import "github.com/Sirupsen/logrus"
 
 const default_prefix = "-"
 
@@ -112,11 +112,12 @@ func (c *Config) GetParamKeysByType(paramType ParamType) []string {
 //   ? [= Sender appconfig] [<= Level debug] file appconfig.log
 //
 func NewConfig(params map[string]Param) (Config, error) {
-  logger, err := syslog.New(syslog.LOG_INFO, "appconfig")
+  logger := logrus.New()
+  /*
   if err != nil {
-    logger.Debug(fmt.Sprintf("Error initializing syslog: %s", err.Error()))
-    //return Config{}, err
+    return Config{}, err
   }
+  */
 
   config := Config{make(map[string]interface{}),params} // initialize the return value
 
@@ -161,7 +162,7 @@ func NewConfig(params map[string]Param) (Config, error) {
     if !match {
       logger.Debug("----> No match.")
       err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
-      logger.Err(err.Error()) // send to syslog
+      logger.Errorf(err.Error()) // send to syslog
       return Config{}, err // instead of returning the current config object, let's be more deterministic and return an empty Config struct
     }
   }
@@ -173,7 +174,7 @@ func NewConfig(params map[string]Param) (Config, error) {
     if _, ok := args[usageFlags[i]]; ok { // has a value been provided for this flag
       isTrue, err := strconv.ParseBool(args[usageFlags[i]]) // Environmental variables and command-line arguments are strings. Use ParseBool to account for "true", "TRUE", "1", etc.
       if err != nil {
-        logger.Err(err.Error()) // send to syslog
+        logger.Errorf(err.Error()) // send to syslog
         return Config{}, err
       }
       if isTrue {
@@ -215,12 +216,12 @@ func NewConfig(params map[string]Param) (Config, error) {
     logger.Debug(fmt.Sprintf("Reading config file: file = '%s', node = '%s'", configJson, configNode))
 
     if f, err := os.Open(configJson); err != nil {
-      logger.Err(err.Error()) // send to syslog
+      logger.Errorf(err.Error()) // send to syslog
       return Config{}, err
     } else { // opened file successfully
       jsonParser := json.NewDecoder(f)
       if err := jsonParser.Decode(&configVals); err != nil {
-        logger.Err(err.Error()) // send to syslog
+        logger.Errorf(err.Error()) // send to syslog
         return Config{}, err
       }
     }
@@ -234,7 +235,7 @@ func NewConfig(params map[string]Param) (Config, error) {
         logger.Debug(fmt.Sprintf("--> Filtering JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, configVals))
       } else {
         err := fmt.Errorf("Node '%s' not found in JSON file '%s'.", configNode, configJson)
-        logger.Err(err.Error()) // send to syslog
+        logger.Errorf(err.Error()) // send to syslog
         return Config{}, err
       }
     }
@@ -263,7 +264,7 @@ func NewConfig(params map[string]Param) (Config, error) {
     if _, ok := config.values[param]; !ok {
       if params[param].Required {
         err := fmt.Errorf("Missing required parameter '%s'.", param)
-        logger.Err(err.Error()) // send to syslog
+        logger.Errorf(err.Error()) // send to syslog
         return config, err
       }
       switch params[param].Type {
