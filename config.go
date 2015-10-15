@@ -3,11 +3,11 @@
 // in the following order, each overriding the previous (if a value is
 // specified): (1) default value (in code), (2) configuration file, (3)
 // environmental variable and (4) command-line. You can also set properties for
-// each parameter (e.g., default value, is required, value type).
+// each parameter (e.g., default value, required, value type).
 //
-// Additionally, you can specify the root node in the configuration file which
-// will allow the same configuration file to contain configuration data for
-// multiple applications and/or configurations.
+// Additionally, you can specify a (different) root node in the configuration
+// file which will allow the same configuration file to contain configuration
+// data for multiple applications and/or configurations.
 //
 // A full example implementation is available in example/.
 package appconfig
@@ -38,47 +38,47 @@ const (
 )
 
 // This is the struct you use to specify the properties of each parameter.
-// The `NewConfig(params map[string]Param) (Config, err)` expects you to pass
+// `appconfig.NewConfig(params map[string]Param)` expects you to pass
 // an array of this struct with the parameter name being the map index.
 //
 // None of the fields are required.
 type Param struct {
   Type ParamType        // Use if you want explicit type conversion
-  Default interface{}   // Default value. If ommited, default value is nil.
-  Usage string          // Description of param. Used by `PrintUsage(message string)`
+  Default interface{}   // Default value. If ommited, initialized value is based on Type.
+  Usage string          // Description of parameter; used by `PrintUsage(message string)`
   Required bool         // Is the parameter required? Default is false.
-  PrefixOverride string // Override the argument identifying prefix. Default is "-".
+  PrefixOverride string // Override the argument identifier prefix. Default is "-".
 }
 
-// This is the object that's returned from NewConfig() and provides methods
-// such as `Get(key string) interface{}` (retrieve values) and
-// `PrintUsage(message string)`.
+// This is the object that's returned from appconfig.NewConfig(). They key
+// methods are:
+//   `Get(key string) interface{} // returns value of parameter key`
+//   `PrintUsage(message string)   // prints usage with optional preceeding message`
 type Config struct {
-  values map[string]interface{}
-  params map[string]Param
+  values map[string]interface{} // use Get() to retreive the values
+  params map[string]Param       // NewConfig() constructor values are kept as reference for other Config methods
 }
 
 // This is a helper function that returns the parameter name prepended with
-// the proper switch prefix. The default prefix is "-" but you can override that
-// with Param.PrefixOverride. Since the prefixes are stripped and the name used
-// as the key for the paramters map, this helper function allows you to
-// reconstruct the command-line switch.
+// the proper switch prefix. The default prefix is "-" but that might be
+// overriden that with Param.PrefixOverride. Since the prefixes are stripped and
+// the name used as the key for the paramters map, this helper function allows
+// you to reconstruct the command-line switch.
 func (c *Config) GetKeysWithPrefix() map[string]string {
   keys := make(map[string]string)
   for param := range c.params {
     prefix := c.params[param].PrefixOverride
-    if prefix == "" {
+    if prefix == "" {  // No PrefixOverride was specified.
       prefix = default_prefix
     }
     keys[param] = prefix + param
-    //fmt.Printf("keys[param] = %s\n", prefix + param)
   }
 
   return keys
 }
 
 // This is a helper function that returns a string array of all parameter names
-// where the Param.Type matches what you pass in.
+// where the Param.Type matches the paramType argument.
 func (c *Config) GetParamKeysByType(paramType ParamType) []string {
   var returnParams []string
 
@@ -94,10 +94,10 @@ func (c *Config) GetParamKeysByType(paramType ParamType) []string {
 //
 // Example:
 //
-//   params := make(map[string]cnf.Param)
-//   params["config"] = simpleconfig.Param{Type:cnf.PARAM_CONFIG_JSON, Default:"polyverse.json", Usage:"JSON configuration file.", Required:false}
-//   params["proxy-addr"] = cnf.Param{Default:":8080", Usage:"List to [address]:port.", Required:true}
-//   params["statsd_addr"] = cnf.Param{Usage:"StatsD address:port."}
+//   params := make(map[string]appconfig.Param)
+//   params["config"] = appconfig.Param{Type:appconfig.PARAM_CONFIG_JSON, Default:"polyverse.json", Usage:"JSON configuration file.", Required:false}
+//   params["proxy-addr"] = appconfig.Param{Default:":8080", Usage:"List to [address]:port.", Required:true}
+//   params["statsd_addr"] = appconfig.Param{Usage:"StatsD address:port."}
 //   config := NewConfig(params)
 //
 // There are a lot of debug-level messages sent to syslog.
@@ -114,29 +114,26 @@ func NewConfig(params map[string]Param) (Config, error) {
   if err != nil {
     return Config{}, err
   }
-  config := Config{make(map[string]interface{}),params}
 
-  args := make(map[string]string)
+  config := Config{make(map[string]interface{}),params} // initialize the return value
 
-  // Make a map of the environmental variables
-  if err := logger.Debug("Checking environmental variables..."); err != nil {
-    fmt.Printf("err: %s", err)
-  }
+  args := make(map[string]string) // local map to hold environmental and command-line key-value pairs
+
+  // Check to see if environmental variables matching the parameter names exists
+  logger.Debug("Checking environmental variables...")
   for param := range params {
     val := os.Getenv(param)
     if val != "" {
-      args[param] = os.Getenv(param)
+      args[param] = val
       logger.Debug(fmt.Sprintf("----> Found match: %s = %s", param, args[param]))
     }
   }
   logger.Debug(fmt.Sprintf("--> Done. Environmental variables: %v", args))
 
-  // Make a map of the command-line arguments
+  // Enumerate the command-line arguments
   logger.Debug(fmt.Sprintf("Processing command-line arguments: %v", os.Args[1:]))
-
-  // enumerate the command-line arguments
+  // Compare each argument with list of supported paramters
   for i := 1; i <= len(os.Args[1:]); i++ {
-    // compare each argument with list of supported paramters
     logger.Debug(fmt.Sprintf("--> Process argument: %s", os.Args[i]))
     match := false // flag to specify whether argument was found in list of supported paramters
     for param := range params {
@@ -149,7 +146,7 @@ func NewConfig(params map[string]Param) (Config, error) {
       if param == arg {
         // set the kv pair in the args map
         match = true
-        if len(kv) == 1 {
+        if len(kv) == 1 { // split resulted in a key but no value (e.g., "--debug")
           args[arg] = "true" // if value isn't provided, default to true
         } else {
           args[arg] = kv[1]
@@ -162,53 +159,81 @@ func NewConfig(params map[string]Param) (Config, error) {
       logger.Debug("----> No match.")
       err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
       logger.Err(err.Error()) // send to syslog
-      return config, err
+      return Config{}, err // instead of returning the current config object, let's be more deterministic and return an empty Config struct
     }
   }
   logger.Debug(fmt.Sprintf("--> Done. Environment variables + command-line arguments overrides: %v", args))
 
   // Usage support
   usageFlags := config.GetParamKeysByType(PARAM_USAGE)
-  for i := 0; i < len(usageFlags); i++ {
-    if args[usageFlags[i]] == "true" {
-      config.values[usageFlags[i]] = true
-      logger.Debug(fmt.Sprintf("PARAM_USAGE flag '%s' set to true. Returning with just this parameter set to true (bool).", usageFlags[i]))
-      return config, nil
+  for i := 0; i < len(usageFlags); i++ { // there should only be 0 or 1 PARAM_USAGE params, but just in case there's more...
+    if _, ok := args[usageFlags[i]]; ok { // has a value been provided for this flag
+      isTrue, err := strconv.ParseBool(args[usageFlags[i]]) // Environmental variables and command-line arguments are strings. Use ParseBool to account for "true", "TRUE", "1", etc.
+      if err != nil {
+        logger.Err(err.Error()) // send to syslog
+        return Config{}, err
+      }
+      if isTrue {
+        config.values[usageFlags[i]] = true // populate the return object with just this value
+        logger.Debug(fmt.Sprintf("PARAM_USAGE flag '%s' set to true.", usageFlags[i]))
+        return config, nil
+      }
     }
   }
-  logger.Debug(fmt.Sprintf("usageFlags = %v", usageFlags))
 
-  configJson := args[config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]]
-  if configJson == "" {
-    configJson = params[config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]].Default.(string)
+  // Find out the config file (if provided)
+  configJsonKey := config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]
+  configJson := ""
+  if configJsonKey != "" { // check if a parameter of type PARAM_CONFIG_JSON was specified
+    if str, ok := args[configJsonKey]; ok {
+      configJson = str // string value found in args[] array
+    } else {
+      if (params[configJsonKey].Default != nil) && (reflect.TypeOf(params[configJsonKey].Default).Kind() == reflect.String) { // nothing found in env or cmd-line; check Default value
+        configJson = params[configJsonKey].Default.(string) // safe to assert
+      }
+    }
   }
+
+  // Find out whether we can use the entire config file or whether we need to filter a node.
   configNodeKey := config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]
-  configNode := args[configNodeKey]
-  if (configNode == "") && (params[configNodeKey].Default != nil){
-    configNode = params[configNodeKey].Default.(string)
+  configNode := ""
+  if configNodeKey != "" {  // check if a parameter of type PARAM_CONFIG_NODE was specified
+    if str, ok := args[configNodeKey]; ok {
+      configNode = str // string value found in args[] array
+    } else {
+      if (params[configNodeKey].Default != nil) && (reflect.TypeOf(params[configNodeKey].Default).Kind() == reflect.String) { // nothing found in env or cmd-line; check Default value
+        configNode = params[configNodeKey].Default.(string) // safe to assert
+      }
+    }
   }
 
-  jsonvals := make(map[string]interface{})
+  configVals := make(map[string]interface{}) // configJson file will be unmarshalled into this map
   if configJson != "" {
-    logger.Debug(fmt.Sprintf("Reading config file: file = %s, node = %s", configJson, configNode))
+    logger.Debug(fmt.Sprintf("Reading config file: file = '%s', node = '%s'", configJson, configNode))
 
     if f, err := os.Open(configJson); err != nil {
       logger.Err(err.Error()) // send to syslog
-      return config, err
+      return Config{}, err
     } else { // opened file successfully
       jsonParser := json.NewDecoder(f)
-      if err := jsonParser.Decode(&jsonvals); err != nil {
+      if err := jsonParser.Decode(&configVals); err != nil {
         logger.Err(err.Error()) // send to syslog
-        return config, err
+        return Config{}, err
       }
     }
-    logger.Debug(fmt.Sprintf("-->Loaded json config file: %v", jsonvals))
+    logger.Debug(fmt.Sprintf("--> Loaded JSON config file: %v", configVals))
 
     // If a configNode is specified, then the config file is expected to have
-    // more info than needed. Set jsonvals to just the portion we're interested in.
+    // more info than needed. Set configVals to just the portion we're interested in.
     if configNode != "" {
-      jsonvals = jsonvals[configNode].(map[string]interface{})
-      logger.Debug(fmt.Sprintf("-->Trimming JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, jsonvals))
+      if (configVals[configNode] != nil) && (reflect.TypeOf(configVals[configNode]).String() == "map[string]interface {}") {
+        configVals = configVals[configNode].(map[string]interface{}) // safe to assert
+        logger.Debug(fmt.Sprintf("--> Filtering JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, configVals))
+      } else {
+        err := fmt.Errorf("Node '%s' not found in JSON file '%s'.", configNode, configJson)
+        logger.Err(err.Error()) // send to syslog
+        return Config{}, err
+      }
     }
   } else {
     logger.Debug("No configuration file specified.")
@@ -223,9 +248,9 @@ func NewConfig(params map[string]Param) (Config, error) {
     } else {
       logger.Debug("----> No default value provided.")
     }
-    if jsonvals[param] != nil {
-      config.values[param] = jsonvals[param]
-      logger.Debug(fmt.Sprintf("----> Config file override: %s = %v (type: %s)", param, jsonvals[param], reflect.TypeOf(jsonvals[param])))
+    if configVals[param] != nil {
+      config.values[param] = configVals[param]
+      logger.Debug(fmt.Sprintf("----> Config file override: %s = %v (type: %s)", param, configVals[param], reflect.TypeOf(configVals[param])))
     }
     if args[param] != "" {
       config.values[param] = args[param]
