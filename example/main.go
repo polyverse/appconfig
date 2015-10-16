@@ -17,10 +17,10 @@ func main() {
   params["port"] = appconfig.Param{Type:appconfig.PARAM_STRING, Default:":8080", Usage:"bind-to port.", Required:true}
   params["statsd_addr"] = appconfig.Param{Type:appconfig.PARAM_STRING, Usage:"statsd endpoint."}
   params["timeout"] = appconfig.Param{Type:appconfig.PARAM_INT, Usage:"server timeout (ms).", Default:1000}
-  params["help"] = appconfig.Param{Type:appconfig.PARAM_BOOL, Default:false, Usage:"print usage.", Required:false, PrefixOverride:"--"}
+  params["help"] = appconfig.Param{Type:appconfig.PARAM_USAGE, Default:false, Usage:"print usage.", Required:false, PrefixOverride:"--"}
 
   fmt.Printf("\nThe following parameters have been defined:")
-  str := ""
+  var str string
   for param := range params {
     str = str + fmt.Sprintf("\n\tparam=\"%s\", Type=%v, Default=%v, Usage=\"%v\", Required=%v, PrefixOverride=\"%v\"", param, params[param].Type, params[param].Default, params[param].Usage, params[param].Required, params[param].PrefixOverride)
   }

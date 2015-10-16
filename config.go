@@ -86,36 +86,6 @@ const (
 	DebugLevel
 )
 
-// This is a helper function that returns the parameter name prepended with
-// the proper switch prefix. The default prefix is "-" but that might be
-// overriden that with Param.PrefixOverride. Since the prefixes are stripped and
-// the name used as the key for the paramters map, this helper function allows
-// you to reconstruct the command-line switch.
-func (c *Config) GetKeysWithPrefix() map[string]string {
-  keys := make(map[string]string)
-  for param := range c.params {
-    prefix := c.params[param].PrefixOverride
-    if prefix == "" {  // No PrefixOverride was specified.
-      prefix = default_prefix
-    }
-    keys[param] = prefix + param
-  }
-
-  return keys
-}
-
-// This is a helper function that returns a string array of all parameter names
-// where the Param.Type matches the paramType argument.
-func (c *Config) GetParamKeysByType(paramType ParamType) []string {
-  var returnParams []string
-
-  for param := range c.params {
-    if c.params[param].Type == paramType {
-      returnParams = append(returnParams, param)
-    }
-  }
-  return returnParams
-}
 // Create a new `map[string]Param` and then add the parameters you want your
 // application to support.
 //
@@ -138,13 +108,6 @@ func (c *Config) GetParamKeysByType(paramType ParamType) []string {
 func NewConfig(params map[string]Param) (Config, error) {
   config := Config{make(map[string]interface{}),params} // initialize the return value
 
-  // Check to see if environmental variables matching the parameter names exists
-  envs, err := processEnvironmentalVariables(params)
-  if err != nil {
-    log.WithFields(log.Fields{"err":err}).Errorf("Error processing command-line.")
-    os.Exit(1)
-  }
-
   // Enumerate the command-line arguments
   args, err := processCommandLine(params)
   if err != nil {
@@ -152,21 +115,21 @@ func NewConfig(params map[string]Param) (Config, error) {
     os.Exit(1)
   }
 
-  // Usage support
-  usageFlags := config.GetParamKeysByType(PARAM_USAGE)
-  for i := 0; i < len(usageFlags); i++ { // there should only be 0 or 1 PARAM_USAGE params, but just in case there's more...
-    if _, ok := args[usageFlags[i]]; ok { // has a value been provided for this flag
-      isTrue, err := strconv.ParseBool(args[usageFlags[i]]) // Environmental variables and command-line arguments are strings. Use ParseBool to account for "true", "TRUE", "1", etc.
-      if err != nil {
-        log.Errorf(err.Error())
-        return Config{}, err
-      }
-      if isTrue {
-        config.values[usageFlags[i]] = true // populate the return object with just this value
-        log.Debugf("PARAM_USAGE flag '%s' set to true.", usageFlags[i])
-        return config, nil
-      }
-    }
+  // Before proceeding, let's check for the PARAM_USAGE types and return early if it's set to true
+  b, err := isCommandLineUsageTypeTrue(args, &config)
+  if err != nil {
+    log.WithFields(log.Fields{"err":err}).Errorf("Error determining whether usage flag is set.")
+    os.Exit(1)
+  }
+  if b {
+    return config, nil // usage flag .value[param]true is set from isCommandLineUsageTypeTrue()
+  }
+
+  // Check to see if environmental variables matching the parameter names exists
+  envs, err := getValsFromEnvVars(params)
+  if err != nil {
+    log.WithFields(log.Fields{"err":err}).Errorf("Error processing command-line.")
+    os.Exit(1)
   }
 
   // Find out the config file (if provided)
@@ -175,6 +138,8 @@ func NewConfig(params map[string]Param) (Config, error) {
     configJsonKey = config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]
   }
   configJson := ""
+
+  // Find out the config node (if provided)
   if configJsonKey != "" { // check if a parameter of type PARAM_CONFIG_JSON was specified
     if str, ok := args[configJsonKey]; ok {
       configJson = str // string value found in args[] array
@@ -185,7 +150,7 @@ func NewConfig(params map[string]Param) (Config, error) {
     }
   }
 
-  // Find out whether we can use the entire config file or whether we need to filter a node.
+  // Reset the root node in the config file to a child node, if necessary
   configNodeKey := ""
   if len(config.GetParamKeysByType(PARAM_CONFIG_NODE)) > 0 { //TODO: need a more elegant way to do this
     configNodeKey = config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]
@@ -296,6 +261,37 @@ func NewConfig(params map[string]Param) (Config, error) {
   return config, nil
 }
 
+// This is a helper function that returns the parameter name prepended with
+// the proper switch prefix. The default prefix is "-" but that might be
+// overriden that with Param.PrefixOverride. Since the prefixes are stripped and
+// the name used as the key for the paramters map, this helper function allows
+// you to reconstruct the command-line switch.
+func (c *Config) GetKeysWithPrefix() map[string]string {
+  keys := make(map[string]string)
+  for param := range c.params {
+    prefix := c.params[param].PrefixOverride
+    if prefix == "" {  // No PrefixOverride was specified.
+      prefix = default_prefix
+    }
+    keys[param] = prefix + param
+  }
+
+  return keys
+}
+
+// This is a helper function that returns a string array of all parameter names
+// where the Param.Type matches the paramType argument.
+func (c *Config) GetParamKeysByType(paramType ParamType) []string {
+  var returnParams []string
+
+  for param := range c.params {
+    if c.params[param].Type == paramType {
+      returnParams = append(returnParams, param)
+    }
+  }
+  return returnParams
+}
+
 // Pass the parameter key and the value will be returned with the proper type
 // (if Type is explicitly specified). Only bool and int are converted if the
 // value from the command-line is used since these are treated as strings.
@@ -381,7 +377,7 @@ func processCommandLine(params map[string]Param) (map[string]string, error){
   return args, nil
 }
 
-func processEnvironmentalVariables(params map[string]Param) (map[string]string, error) {
+func getValsFromEnvVars(params map[string]Param) (map[string]string, error) {
   envs := make(map[string]string)
 
   log.Debugf("Checking environmental variables...")
@@ -397,6 +393,27 @@ func processEnvironmentalVariables(params map[string]Param) (map[string]string, 
   log.Debugf("--> Done. Environmental variables: %v", envs)
 
   return envs, nil
+}
+
+func isCommandLineUsageTypeTrue(args map[string]string, config *Config) (bool, error) {
+  log.Debugf("Checking command-line for usage switch...")
+  // Usage support
+  usageFlags := config.GetParamKeysByType(PARAM_USAGE)
+  for i := 0; i < len(usageFlags); i++ { // there should only be 0 or 1 PARAM_USAGE params, but just in case there's more...
+    if _, ok := args[usageFlags[i]]; ok { // has a value been provided for this flag
+      isTrue, err := strconv.ParseBool(args[usageFlags[i]]) // Environmental variables and command-line arguments are strings. Use ParseBool to account for "true", "TRUE", "1", etc.
+      if err != nil {
+        return false, err
+      }
+      if isTrue {
+        log.Debugf("--> Usage flag '%s' set to true.", usageFlags[i])
+        config.values[usageFlags[i]] = true // set config.value[]
+        return true, nil
+      }
+    }
+  }
+  log.Debugf("--> Usage flag is not set to true.")
+  return false, nil
 }
 
 func GetBoolFromCommandLine(param string, params map[string]Param) bool {
