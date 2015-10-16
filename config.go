@@ -21,7 +21,9 @@ import "strings"
 import "strconv"
 import "reflect"
 import "encoding/json"
-import "github.com/Sirupsen/logrus"
+import log "github.com/Sirupsen/logrus"
+
+//var log = logrus.New() // create a global instance of logger
 
 const default_prefix = "-"
 
@@ -61,6 +63,28 @@ type Config struct {
   values map[string]interface{} // use Get() to retreive the values
   params map[string]Param       // NewConfig() constructor values are kept as reference for other Config methods
 }
+
+// Level type
+type Level uint8
+
+const (
+	// PanicLevel level, highest level of severity. Logs and then calls panic with the
+	// message passed to Debug, Info, ...
+	PanicLevel Level = iota
+	// FatalLevel level. Logs and then calls `os.Exit(1)`. It will exit even if the
+	// logging level is set to Panic.
+	FatalLevel
+	// ErrorLevel level. Logs. Used for errors that should definitely be noted.
+	// Commonly used for hooks to send errors to an error tracking service.
+	ErrorLevel
+	// WarnLevel level. Non-critical entries that deserve eyes.
+	WarnLevel
+	// InfoLevel level. General operational entries about what's going on inside the
+	// application.
+	InfoLevel
+	// DebugLevel level. Usually only enabled when debugging. Very verbose logging.
+	DebugLevel
+)
 
 // This is a helper function that returns the parameter name prepended with
 // the proper switch prefix. The default prefix is "-" but that might be
@@ -112,61 +136,21 @@ func (c *Config) GetParamKeysByType(paramType ParamType) []string {
 //   ? [= Sender appconfig] [<= Level debug] file appconfig.log
 //
 func NewConfig(params map[string]Param) (Config, error) {
-  logger := logrus.New()
-  /*
-  if err != nil {
-    return Config{}, err
-  }
-  */
-
   config := Config{make(map[string]interface{}),params} // initialize the return value
 
-  args := make(map[string]string) // local map to hold environmental and command-line key-value pairs
-
   // Check to see if environmental variables matching the parameter names exists
-  logger.Debug("Checking environmental variables...")
-  for param := range params {
-    val := os.Getenv(param)
-    if val != "" {
-      args[param] = val
-      logger.Debug(fmt.Sprintf("----> Found match: %s = %s", param, args[param]))
-    }
+  envs, err := processEnvironmentalVariables(params)
+  if err != nil {
+    log.WithFields(log.Fields{"err":err}).Errorf("Error processing command-line.")
+    os.Exit(1)
   }
-  logger.Debug(fmt.Sprintf("--> Done. Environmental variables: %v", args))
 
   // Enumerate the command-line arguments
-  logger.Debug(fmt.Sprintf("Processing command-line arguments: %v", os.Args[1:]))
-  // Compare each argument with list of supported paramters
-  for i := 1; i <= len(os.Args[1:]); i++ {
-    logger.Debug(fmt.Sprintf("--> Process argument: %s", os.Args[i]))
-    match := false // flag to specify whether argument was found in list of supported paramters
-    for param := range params {
-      kv := strings.Split(os.Args[i], "=") // split the argument into key + value
-      prefix := default_prefix
-      if params[param].PrefixOverride != "" {
-        prefix = params[param].PrefixOverride // prefix override was specified for this parameter. override default prefix.
-      }
-      arg := strings.TrimPrefix(kv[0], prefix) // strip out the prefix so we can index the map cleanly
-      if param == arg {
-        // set the kv pair in the args map
-        match = true
-        if len(kv) == 1 { // split resulted in a key but no value (e.g., "--debug")
-          args[arg] = "true" // if value isn't provided, default to true
-        } else {
-          args[arg] = kv[1]
-        }
-        logger.Debug(fmt.Sprintf("----> Found match: %s = %s", param, args[arg]))
-        break
-      }
-    }
-    if !match {
-      logger.Debug("----> No match.")
-      err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
-      logger.Errorf(err.Error()) // send to syslog
-      return Config{}, err // instead of returning the current config object, let's be more deterministic and return an empty Config struct
-    }
+  args, err := processCommandLine(params)
+  if err != nil {
+    log.WithFields(log.Fields{"err":err}).Errorf("Error processing command-line.")
+    os.Exit(1)
   }
-  logger.Debug(fmt.Sprintf("--> Done. Environment variables + command-line arguments overrides: %v", args))
 
   // Usage support
   usageFlags := config.GetParamKeysByType(PARAM_USAGE)
@@ -174,12 +158,12 @@ func NewConfig(params map[string]Param) (Config, error) {
     if _, ok := args[usageFlags[i]]; ok { // has a value been provided for this flag
       isTrue, err := strconv.ParseBool(args[usageFlags[i]]) // Environmental variables and command-line arguments are strings. Use ParseBool to account for "true", "TRUE", "1", etc.
       if err != nil {
-        logger.Errorf(err.Error()) // send to syslog
+        log.Errorf(err.Error())
         return Config{}, err
       }
       if isTrue {
         config.values[usageFlags[i]] = true // populate the return object with just this value
-        logger.Debug(fmt.Sprintf("PARAM_USAGE flag '%s' set to true.", usageFlags[i]))
+        log.Debugf("PARAM_USAGE flag '%s' set to true.", usageFlags[i])
         return config, nil
       }
     }
@@ -219,58 +203,62 @@ func NewConfig(params map[string]Param) (Config, error) {
 
   configVals := make(map[string]interface{}) // configJson file will be unmarshalled into this map
   if configJson != "" {
-    logger.Debug(fmt.Sprintf("Reading config file: file = '%s', node = '%s'", configJson, configNode))
+    log.Debugf("Reading config file: file = '%s', node = '%s'", configJson, configNode)
 
     if f, err := os.Open(configJson); err != nil {
-      logger.Errorf(err.Error()) // send to syslog
+      log.Errorf(err.Error()) // send to syslog
       return Config{}, err
     } else { // opened file successfully
       jsonParser := json.NewDecoder(f)
       if err := jsonParser.Decode(&configVals); err != nil {
-        logger.Errorf(err.Error()) // send to syslog
+        log.Errorf(err.Error()) // send to syslog
         return Config{}, err
       }
     }
-    logger.Debug(fmt.Sprintf("--> Loaded JSON config file: %v", configVals))
+    log.Debugf("--> Loaded JSON config file: %v", configVals)
 
     // If a configNode is specified, then the config file is expected to have
     // more info than needed. Set configVals to just the portion we're interested in.
     if configNode != "" {
       if (configVals[configNode] != nil) && (reflect.TypeOf(configVals[configNode]).String() == "map[string]interface {}") {
         configVals = configVals[configNode].(map[string]interface{}) // safe to assert
-        logger.Debug(fmt.Sprintf("--> Filtering JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, configVals))
+        log.Debugf("--> Filtering JSON based on PARAM_CONFIG_NODE = '%s': %v", configNode, configVals)
       } else {
         err := fmt.Errorf("Node '%s' not found in JSON file '%s'.", configNode, configJson)
-        logger.Errorf(err.Error()) // send to syslog
+        log.Errorf(err.Error())
         return Config{}, err
       }
     }
   } else {
-    logger.Debug("No configuration file specified.")
+    log.Debugf("No configuration file specified.")
   }
 
-  logger.Debug("Finalizing configuration values...")
+  log.Debugf("Finalizing configuration values...")
   for param := range params {
-    logger.Debug(fmt.Sprintf("--> Processing param: %s", param))
+    log.Debugf("--> Processing param: %s", param)
     if params[param].Default != nil {
       config.values[param] = params[param].Default
-      logger.Debug(fmt.Sprintf("----> Setting default: %s = %v (type: %s)", param, params[param].Default, reflect.TypeOf(params[param].Default)))
+      log.Debugf("----> Setting default: %s = %v (type: %s)", param, params[param].Default, reflect.TypeOf(params[param].Default))
     } else {
-      logger.Debug("----> No default value provided.")
+      log.Debugf("----> No default value provided.")
     }
     if configVals[param] != nil {
       config.values[param] = configVals[param]
-      logger.Debug(fmt.Sprintf("----> Config file override: %s = %v (type: %s)", param, configVals[param], reflect.TypeOf(configVals[param])))
+      log.Debugf("----> Config file override: %s = %v (type: %s)", param, configVals[param], reflect.TypeOf(configVals[param]))
+    }
+    if envs[param] != "" {
+      config.values[param] = envs[param]
+      log.Debugf("----> Environmental variable override: %s = %v (type: %s)", param, args[param], reflect.TypeOf(args[param]))
     }
     if args[param] != "" {
       config.values[param] = args[param]
-      logger.Debug(fmt.Sprintf("----> Environmental and command-line override: %s = %v (type: %s)", param, args[param], reflect.TypeOf(args[param])))
+      log.Debugf("----> Command-line override: %s = %v (type: %s)", param, args[param], reflect.TypeOf(args[param]))
     }
 
     if _, ok := config.values[param]; !ok {
       if params[param].Required {
         err := fmt.Errorf("Missing required parameter '%s'.", param)
-        logger.Errorf(err.Error()) // send to syslog
+        log.Errorf(err.Error())
         return config, err
       }
       switch params[param].Type {
@@ -291,20 +279,20 @@ func NewConfig(params map[string]Param) (Config, error) {
         case PARAM_BOOL: {
           if reflect.TypeOf(config.values[param]).Name() == "string" {
             config.values[param], _ = strconv.ParseBool(config.values[param].(string))
-            logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+            log.Debugf("----> Type mismatch. converted string to bool: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
           }
         }
         case PARAM_INT: {
           if reflect.TypeOf(config.values[param]).Name() == "string" {
             config.values[param], _ = strconv.Atoi(config.values[param].(string))
-            logger.Debug(fmt.Sprintf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param])))
+            log.Debugf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
           }
         }
       }
     }
   }
 
-  logger.Debug(fmt.Sprintf("Done. Final config values: %v", config.values))
+  log.Debugf("Done. Final config values: %v", config.values)
   return config, nil
 }
 
@@ -345,4 +333,83 @@ func (c *Config) PrintUsage(message string) {
     }
     fmt.Printf("  %s   %s %s\n", padded, c.params[param].Usage, def)
   }
+}
+
+// SetLevel sets the standard logger level.
+func SetLogLevel(level Level) {
+  log.SetLevel(log.Level(level))
+  log.Debugf("SetLogLevel(): %s", log.GetLevel().String())
+}
+
+func processCommandLine(params map[string]Param) (map[string]string, error){
+  args := make(map[string]string) // local map to hold environmental and command-line key-value pairs
+
+  log.Debugf("Processing command-line arguments: %v", os.Args[1:])
+  // Compare each argument with list of supported paramters
+  for i := 1; i <= len(os.Args[1:]); i++ {
+    log.Debugf("--> Process argument: %s", os.Args[i])
+    match := false // flag to specify whether argument was found in list of supported paramters
+    for param := range params {
+      kv := strings.Split(os.Args[i], "=") // split the argument into key + value
+      prefix := default_prefix
+      if params[param].PrefixOverride != "" {
+        prefix = params[param].PrefixOverride // prefix override was specified for this parameter. override default prefix.
+      }
+      arg := strings.TrimPrefix(kv[0], prefix) // strip out the prefix so we can index the map cleanly
+      if param == arg {
+        // set the kv pair in the args map
+        match = true
+        if len(kv) == 1 { // split resulted in a key but no value (e.g., "--debug")
+          args[arg] = "true" // if value isn't provided, default to true
+        } else {
+          args[arg] = kv[1]
+        }
+        log.Debugf("----> Found match: %s = %s", param, args[arg])
+        break
+      }
+    }
+    if !match {
+      log.Debugf("----> No match.")
+      err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
+      log.Errorf(err.Error()) // send to syslog
+      return nil, err // instead of returning the current config object, let's be more deterministic and return an empty Config struct
+    }
+  }
+
+  log.Debugf("--> Done. Command-line arguments overrides: %v", args)
+
+  return args, nil
+}
+
+func processEnvironmentalVariables(params map[string]Param) (map[string]string, error) {
+  envs := make(map[string]string)
+
+  log.Debugf("Checking environmental variables...")
+
+  for param := range params {
+    val := os.Getenv(param)
+    if val != "" {
+      envs[param] = val
+      log.Debugf("----> Found match: %s = %s", param, envs[param])
+    }
+  }
+
+  log.Debugf("--> Done. Environmental variables: %v", envs)
+
+  return envs, nil
+}
+
+func GetBoolFromCommandLine(param string, params map[string]Param) bool {
+  args, err := processCommandLine(params)
+  if err != nil {
+    return false
+  }
+  if val, ok := args[param]; ok {
+    if val != "" {
+      b, _ := strconv.ParseBool(val)
+      return b
+    }
+  }
+
+  return false
 }

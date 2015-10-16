@@ -1,19 +1,19 @@
 {
-  "crypto-proxy": {
+  "proxy": {
     "debug":false,
-    "proxy-addr":":8080",
-    "remote_addr":"http://localhost:80",
+    "proxy-addr":":80",
+    "remote_addr":"http://localhost:8080",
     "statsd_addr":"localhost:8125",
     "ProxyRules":{
       "/(.*?)": {
-        "ScriptFile":"js/crypto-proxy.js",
+        "ScriptFile":"js/proxy.js",
         "RequestHandler":"RequestHandler(httpRequest)",
         "ResponseHandler":"ResponseHandler(httpResponse)"
       }
     }
   },
-  "supervisor": {
+  "example": {
     "debug":false,
-    "statsd-addr":"localhost:8125"
+    "statsd_addr":"localhost:8125"
   }
 }
