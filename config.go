@@ -186,7 +186,10 @@ func NewConfig(params map[string]Param) (Config, error) {
   }
 
   // Find out the config file (if provided)
-  configJsonKey := config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]
+  configJsonKey := ""
+  if len(config.GetParamKeysByType(PARAM_CONFIG_JSON)) > 0 { //TODO: need a more elegant way to do this
+    configJsonKey = config.GetParamKeysByType(PARAM_CONFIG_JSON)[0]
+  }
   configJson := ""
   if configJsonKey != "" { // check if a parameter of type PARAM_CONFIG_JSON was specified
     if str, ok := args[configJsonKey]; ok {
@@ -199,7 +202,10 @@ func NewConfig(params map[string]Param) (Config, error) {
   }
 
   // Find out whether we can use the entire config file or whether we need to filter a node.
-  configNodeKey := config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]
+  configNodeKey := ""
+  if len(config.GetParamKeysByType(PARAM_CONFIG_NODE)) > 0 { //TODO: need a more elegant way to do this
+    configNodeKey = config.GetParamKeysByType(PARAM_CONFIG_NODE)[0]
+  }
   configNode := ""
   if configNodeKey != "" {  // check if a parameter of type PARAM_CONFIG_NODE was specified
     if str, ok := args[configNodeKey]; ok {
