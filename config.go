@@ -301,6 +301,30 @@ func (c *Config) Get(key string) interface{} {
   return c.values[key]
 }
 
+func (c *Config) GetInt(key string) int {
+  if reflect.TypeOf(c.values[key]).String() == "int" {
+    return c.values[key].(int)
+  } else {
+    return 0
+  }
+}
+
+func (c *Config) GetBool(key string) bool {
+  if reflect.TypeOf(c.values[key]).String() == "bool" {
+    return c.values[key].(bool)
+  } else {
+    return false
+  }
+}
+
+func (c *Config) GetString(key string) string {
+  if reflect.TypeOf(c.values[key]).String() == "string" {
+    return c.values[key].(string)
+  } else {
+    return ""
+  }
+}
+
 // This method prints out "Usage:" followed by two aligned columns. The first
 // is the switch (including prefix) and the second is the Usage.
 // You can optionally provide a string that will be prepended to the output.
