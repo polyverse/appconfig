@@ -21,7 +21,9 @@ import "strings"
 import "strconv"
 import "reflect"
 import "encoding/json"
-import log "github.com/Sirupsen/logrus"
+import (
+  log "github.com/Sirupsen/logrus"
+)
 
 //var log = logrus.New() // create a global instance of logger
 
@@ -53,6 +55,7 @@ type Param struct {
   Usage string          // Description of parameter; used by `PrintUsage(message string)`
   Required bool         // Is the parameter required? Default is false.
   PrefixOverride string // Override the argument identifier prefix. Default is "-".
+  Validate func(interface{}) bool //Set a function that can validate the parameter upon parsing.
 }
 
 // This is the object that's returned from appconfig.NewConfig(). They key
@@ -252,6 +255,19 @@ func NewConfig(params map[string]Param) (Config, error) {
             config.values[param], _ = strconv.Atoi(config.values[param].(string))
             log.Debugf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
           }
+        }
+      }
+    }
+
+    log.Debugf("Validating configuration values against validator functions...")
+    if validate := params[param].Validate; validate != nil {
+      log.Debugf("----> Validator found for param %s", param)
+      if value, ok := config.values[param]; ok {
+        log.Debug("----> Validating param %s value %v", param, value)
+        if !validate(value) {
+          err := fmt.Errorf("Validation failed for param %s with value %v", param, value)
+          log.Errorf(err.Error())
+          return Config{}, err
         }
       }
     }
