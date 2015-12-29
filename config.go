@@ -23,7 +23,6 @@ import "reflect"
 import "encoding/json"
 import (
   log "github.com/Sirupsen/logrus"
-  "github.com/docker/docker/vendor/src/github.com/aws/aws-sdk-go/aws"
 )
 
 //var log = logrus.New() // create a global instance of logger
