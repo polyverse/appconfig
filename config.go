@@ -34,16 +34,19 @@ const default_prefix = "-"
 type ParamType int
 
 // Constants for the ParamType type.
+// Negative ParamTypes are those not serialized or exposed in json-config
+// The best example is json-config type itself which is used to take the file name for json,
+// and it cannot be overridden from the json file itself.
 const (
 	PARAM_STRING            ParamType = iota // Converts nil to ""
-	PARAM_INT                                // Converts environmental variables and command-line values from string to int
-	PARAM_BOOL                               // Converts environmental variables and command-line values from string to bool
-	PARAM_OBJECT                             // Currently a noop
-	PARAM_CONFIG_READ_ENV                    //Value represents whether environment variables should be read and used (allows explicit control)
-	PARAM_CONFIG_JSON_FILE                   // Value represents the JSON config file.
-	PARAM_CONFIG_JSON_STDIN                  // Value represents the JSON input from stdin (standard input)
-	PARAM_CONFIG_NODE                        // Specifies a different "root node" in the config file (shared by both json-inputs).
-	PARAM_USAGE                              // Usage flag. Typically -h, -help or --help.
+	PARAM_INT               ParamType = 1    // Converts environmental variables and command-line values from string to int
+	PARAM_BOOL              ParamType = 2    // Converts environmental variables and command-line values from string to bool
+	PARAM_OBJECT            ParamType = 3    // Currently a noop
+	PARAM_CONFIG_READ_ENV   ParamType = -1   //Value represents whether environment variables should be read and used (allows explicit control)
+	PARAM_CONFIG_JSON_FILE  ParamType = -2   // Value represents the JSON config file.
+	PARAM_CONFIG_JSON_STDIN ParamType = -3   // Value represents the JSON input from stdin (standard input)
+	PARAM_CONFIG_NODE       ParamType = -4   // Specifies a different "root node" in the config file (shared by both json-inputs).
+	PARAM_USAGE             ParamType = -5   // Usage flag. Typically -h, -help or --help.
 )
 
 // This is the struct you use to specify the properties of each parameter.
@@ -340,6 +343,32 @@ func (c *Config) PrintUsage(message string) {
 		}
 		fmt.Printf("  %s   %s %s\n", padded, c.params[param].Usage, def)
 	}
+}
+
+// This method serializes this entire configuration object
+// as a future-consumable JSON string that can be piped
+// right back into this appconfig library to be parsed.
+//
+// This function is useful when you want a collapsed configuration
+// that contains all the overrides applied in serial order,
+// to be output as a single-source consumption for the future.
+func (c *Config) ToJson() (string, error) {
+	jsonConfigNode := "config"
+	if len(c.GetParamKeysByType(PARAM_CONFIG_NODE)) > 0 {
+		jsonConfigNode = c.GetString(c.GetParamKeysByType(PARAM_CONFIG_NODE)[0])
+	}
+
+	jsonVals := make(map[string]interface{})
+	for param := range c.params {
+		if c.params[param].Type >= 0 {
+			jsonVals[param] = c.values[param]
+		}
+	}
+
+	jsonTopLevel := make(map[string]interface{})
+	jsonTopLevel[jsonConfigNode] = jsonVals
+	jsonbytes, err := json.Marshal(jsonTopLevel)
+	return string(jsonbytes), err
 }
 
 // SetLevel sets the standard logger level.

@@ -55,4 +55,13 @@ func main() {
 		fmt.Printf("\tparam = %s, value = %v, type = %s\n", param, config.Get(param), reflect.TypeOf(config.Get(param)))
 	}
 
+
+	fmt.Printf("\n\nJson serialization of this config (for future re-parse):\n")
+	if json, err :=  config.ToJson(); err != nil {
+		fmt.Printf("An Error occurred while serializing config to json: %v\n", err)
+	} else {
+		fmt.Printf(json)
+		fmt.Println()
+	}
+
 }
