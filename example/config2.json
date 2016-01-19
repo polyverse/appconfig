@@ -3,7 +3,7 @@
     "debug":false,
     "proxy-addr":":80",
     "remote_addr":"http://localhost:8080",
-    "statsd_addr":"localhost:8125",
+    "statsd_addr":"localhost:8129",
     "ProxyRules":{
       "/(.*?)": {
         "ScriptFile":"js/proxy.js",
