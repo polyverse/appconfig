@@ -318,8 +318,9 @@ func (c *Config) GetString(key string) string {
 // This method prints out "Usage:" followed by two aligned columns. The first
 // is the switch (including prefix) and the second is the Usage.
 // You can optionally provide a string that will be prepended to the output.
+// The output is also bounded to 80-character width.
 func (c *Config) PrintUsage(message string) {
-	fmt.Printf("%sUsage: %s [options]\n\noptions:\n", message, os.Args[0])
+	fmt.Printf("%s\nUsage: %s [options]\n\noptions:\n", message, os.Args[0])
 
 	maxlen := 0
 	keys := c.GetKeysWithPrefix()
@@ -330,18 +331,37 @@ func (c *Config) PrintUsage(message string) {
 		}
 	}
 
+	maxlen = maxlen + 1 //Because of the "-" sign behind each parameter
+
+	padspaces := strings.Repeat(" ", maxlen + 3) //account for the 3 spaces when we print the key
+
 	for param := range c.params {
 		padded := keys[param]
-		for i := len(padded); i <= maxlen; i++ {
-			padded = padded + " "
-		}
+		padlen := maxlen - len(padded)
+		padded = padded + strings.Repeat(" ", padlen)
+
 		def := c.params[param].Default
 		if def != nil {
 			def = fmt.Sprintf("(default: %v)", def)
 		} else {
 			def = ""
 		}
-		fmt.Printf("  %s   %s %s\n", padded, c.params[param].Usage, def)
+
+		fmt.Printf(" %s  ", padded)
+		description := fmt.Sprintf("%s %s", c.params[param].Usage, def)
+		words := strings.Fields(description)
+
+		width := 80 - maxlen
+		runningCount := 0
+		for _, word := range words {
+			if runningCount != 0 && runningCount + len(word) > width {
+				runningCount = 0
+				fmt.Printf("\n%s", padspaces)
+			}
+			fmt.Printf("%s ", word)
+			runningCount = runningCount + len(word) + 1
+		}
+		fmt.Printf("\n\n")
 	}
 }
 
@@ -521,3 +541,4 @@ func getPreliminaryConfigValue(config Config, args map[string]string, params map
 	}
 	return configValue
 }
+
