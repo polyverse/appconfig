@@ -114,7 +114,7 @@ const (
 //   ? [= Sender appconfig] [<= Level debug] file appconfig.log
 //
 func NewConfig(params map[string]Param) (Config, error) {
-	config := Config{make(map[string]interface{}), params} // initialize the return value
+	config := Config{values: make(map[string]interface{}), params: params} // initialize the return value
 
 	// Enumerate the command-line arguments
 	args, err := processCommandLine(params)
@@ -241,7 +241,7 @@ func NewConfig(params map[string]Param) (Config, error) {
 				if !validate(value) {
 					err := fmt.Errorf("Validation failed for param %s with value %v", param, value)
 					log.Errorf(err.Error())
-					return Config{}, err
+					return config, err
 				}
 			}
 		}
