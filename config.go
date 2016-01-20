@@ -228,6 +228,9 @@ func NewConfig(params map[string]Param) (Config, error) {
 					if reflect.TypeOf(config.values[param]).Name() == "string" {
 						config.values[param], _ = strconv.Atoi(config.values[param].(string))
 						log.Debugf("----> Type mismatch. converted string to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
+					} else if reflect.TypeOf(config.values[param]).Name() == "float64" { //when reading from JSON
+						config.values[param] = int(config.values[param].(float64))
+						log.Debugf("----> Type mismatch. converted float64 to int: %s = %v (type: %s)", param, config.values[param], reflect.TypeOf(config.values[param]))
 					}
 				}
 			}
