@@ -390,7 +390,7 @@ func (c *Config) ToJson() (string, error) {
 
 	jsonTopLevel := make(map[string]interface{})
 	jsonTopLevel[jsonConfigNode] = jsonVals
-	jsonbytes, err := json.Marshal(jsonTopLevel)
+	jsonbytes, err := json.MarshalIndent(jsonTopLevel, "", "	")
 	return string(jsonbytes), err
 }
 
