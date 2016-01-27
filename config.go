@@ -410,6 +410,12 @@ func processCommandLine(params map[string]Param) (map[string]string, error) {
 		match := false // flag to specify whether argument was found in list of supported paramters
 		for param := range params {
 			kv := strings.Split(os.Args[i], "=") // split the argument into key + value
+			// if there were "=" after the first one, assume they are part of the right-hand value and reconstitute
+			if len(kv) > 2 {
+				for n := len(kv); n > 2; n-- {
+					kv[n - 2] = kv[n - 2] + "=" + kv[n - 1]
+				}
+			}
 			prefix := default_prefix
 			if params[param].PrefixOverride != "" {
 				prefix = params[param].PrefixOverride // prefix override was specified for this parameter. override default prefix.
