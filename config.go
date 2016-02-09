@@ -23,6 +23,7 @@ import "reflect"
 import "encoding/json"
 import (
 	log "github.com/Sirupsen/logrus"
+	"sort"
 )
 
 //var log = logrus.New() // create a global instance of logger
@@ -338,7 +339,7 @@ func (c *Config) PrintUsage(message string) {
 
 	padspaces := strings.Repeat(" ", maxlen + 3) //account for the 3 spaces when we print the key
 
-	for param := range c.params {
+	for _, param := range sortedKeys(c.params) {
 		padded := keys[param]
 		padlen := maxlen - len(padded)
 		padded = padded + strings.Repeat(" ", padlen)
@@ -551,3 +552,15 @@ func getPreliminaryConfigValue(config Config, args map[string]string, params map
 	return configValue
 }
 
+//Pulls all keys out of a map, sorts them, and returns them as an array.
+//This alows stable/sorted iteration over maps
+func sortedKeys(inMap map[string]Param) []string {
+	keys := sort.StringSlice{}
+	for key, _ := range inMap {
+		keys = append(keys, key)
+	}
+
+	keys.Sort()
+
+	return keys
+}
