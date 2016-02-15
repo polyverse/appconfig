@@ -121,6 +121,7 @@ func NewConfig(params map[string]Param) (Config, error) {
 	args, err := processCommandLine(params)
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Errorf("Error processing command-line.")
+		config.PrintUsage(err.Error());
 		os.Exit(1)
 	}
 
@@ -129,8 +130,7 @@ func NewConfig(params map[string]Param) (Config, error) {
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Errorf("Error determining whether usage flag is set.")
 		os.Exit(1)
-	}
-	if b {
+	} else if b {
 		return config, nil // usage flag .value[param]true is set from isCommandLineUsageTypeTrue()
 	}
 
@@ -296,7 +296,7 @@ func (c *Config) Get(key string) interface{} {
 }
 
 func (c *Config) GetInt(key string) int {
-	if reflect.TypeOf(c.values[key]).String() == "int" {
+	if _, ok := c.values[key]; ok && reflect.TypeOf(c.values[key]).String() == "int" {
 		return c.values[key].(int)
 	} else {
 		return 0
@@ -304,7 +304,7 @@ func (c *Config) GetInt(key string) int {
 }
 
 func (c *Config) GetBool(key string) bool {
-	if reflect.TypeOf(c.values[key]).String() == "bool" {
+	if _, ok := c.values[key]; ok && reflect.TypeOf(c.values[key]).String() == "bool" {
 		return c.values[key].(bool)
 	} else {
 		return false
@@ -312,7 +312,7 @@ func (c *Config) GetBool(key string) bool {
 }
 
 func (c *Config) GetString(key string) string {
-	if reflect.TypeOf(c.values[key]).String() == "string" {
+	if _, ok :=c.values[key]; ok && reflect.TypeOf(c.values[key]).String() == "string" {
 		return c.values[key].(string)
 	} else {
 		return ""
