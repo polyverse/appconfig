@@ -121,7 +121,7 @@ func NewConfig(params map[string]Param) (Config, error) {
 	args, err := processCommandLine(params)
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Errorf("Error processing command-line.")
-		config.PrintUsage(err.Error());
+		config.PrintUsage(err.Error())
 		os.Exit(1)
 	}
 
@@ -162,7 +162,7 @@ func NewConfig(params map[string]Param) (Config, error) {
 		log.Debugf("No configuration file specified.")
 	}
 
-	configStdinVals := make(map[string]interface{})                   //ConfigJson from stdin will be unmarshalled into this map
+	configStdinVals := make(map[string]interface{}) //ConfigJson from stdin will be unmarshalled into this map
 	if ok, _ := strconv.ParseBool(getPreliminaryConfigValue(config, args, params, PARAM_CONFIG_JSON_STDIN)); ok {
 		configStdinVals = parseJsonFromFile(os.Stdin, "stdin (standard input)", configNode)
 	}
@@ -312,7 +312,7 @@ func (c *Config) GetBool(key string) bool {
 }
 
 func (c *Config) GetString(key string) string {
-	if _, ok :=c.values[key]; ok && reflect.TypeOf(c.values[key]).String() == "string" {
+	if _, ok := c.values[key]; ok && reflect.TypeOf(c.values[key]).String() == "string" {
 		return c.values[key].(string)
 	} else {
 		return ""
@@ -337,7 +337,7 @@ func (c *Config) PrintUsage(message string) {
 
 	maxlen = maxlen + 1 //Because of the "-" sign behind each parameter
 
-	padspaces := strings.Repeat(" ", maxlen + 3) //account for the 3 spaces when we print the key
+	padspaces := strings.Repeat(" ", maxlen+3) //account for the 3 spaces when we print the key
 
 	for _, param := range sortedKeys(c.params) {
 		padded := keys[param]
@@ -358,7 +358,7 @@ func (c *Config) PrintUsage(message string) {
 		width := 80 - maxlen
 		runningCount := 0
 		for _, word := range words {
-			if runningCount != 0 && runningCount + len(word) > width {
+			if runningCount != 0 && runningCount+len(word) > width {
 				runningCount = 0
 				fmt.Printf("\n%s", padspaces)
 			}
@@ -414,7 +414,7 @@ func processCommandLine(params map[string]Param) (map[string]string, error) {
 			// if there were "=" after the first one, assume they are part of the right-hand value and reconstitute
 			if len(kv) > 2 {
 				for n := len(kv); n > 2; n-- {
-					kv[n - 2] = kv[n - 2] + "=" + kv[n - 1]
+					kv[n-2] = kv[n-2] + "=" + kv[n-1]
 				}
 			}
 			prefix := default_prefix
