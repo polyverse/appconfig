@@ -71,6 +71,7 @@ type Param struct {
 type Config struct {
 	values map[string]interface{} // use Get() to retreive the values
 	params map[string]Param       // NewConfig() constructor values are kept as reference for other Config methods
+	args map[int]string
 }
 
 // Level type
@@ -115,10 +116,10 @@ const (
 //   ? [= Sender appconfig] [<= Level debug] file appconfig.log
 //
 func NewConfig(params map[string]Param) (Config, error) {
-	config := Config{values: make(map[string]interface{}), params: params} // initialize the return value
+	config := Config{values: make(map[string]interface{}), params: params, args: make(map[int]string)} // initialize the return value
 
 	// Enumerate the command-line arguments
-	args, err := processCommandLine(params)
+	args, err := config.processCommandLine(params)
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Errorf("Error processing command-line.")
 		config.PrintUsage(err.Error())
@@ -323,25 +324,30 @@ func (c *Config) GetString(key string) string {
 // is the switch (including prefix) and the second is the Usage.
 // You can optionally provide a string that will be prepended to the output.
 // The output is also bounded to 80-character width.
-func (c *Config) PrintUsage(message string) {
-	fmt.Printf("%s\nUsage: %s [options]\n\noptions:\n", message, os.Args[0])
-
+func (c *Config) PrintUsage(message ...string) {
+	if len(message) == 1 {
+	  fmt.Printf("%s\nUsage: %s [options]\n\noptions:\n", message[0], os.Args[0])
+        } else {
+          fmt.Printf("%s\nUsage: %s %s", message[0], os.Args[0], message[1])
+        }
 	maxlen := 0
 	keys := c.GetKeysWithPrefix()
 	for key := range keys {
+		log.Debugf("key = %s, len(keys[key]) = %v", key, len(keys[key]))
 		if len(key) > maxlen {
-			maxlen = len(key)
-			//fmt.Printf("maxlen is now %v\n", len(key))
+			maxlen = len(keys[key])
+			log.Debugf("maxlen is now %v\n", maxlen)
 		}
 	}
 
-	maxlen = maxlen + 1 //Because of the "-" sign behind each parameter
+//	maxlen = maxlen + 2 //Because of the "-" sign behind each parameter
 
 	padspaces := strings.Repeat(" ", maxlen+3) //account for the 3 spaces when we print the key
 
 	for _, param := range sortedKeys(c.params) {
 		padded := keys[param]
 		padlen := maxlen - len(padded)
+		log.Debugf("param = %v\n", param)
 		padded = padded + strings.Repeat(" ", padlen)
 
 		def := c.params[param].Default
@@ -365,7 +371,7 @@ func (c *Config) PrintUsage(message string) {
 			fmt.Printf("%s ", word)
 			runningCount = runningCount + len(word) + 1
 		}
-		fmt.Printf("\n\n")
+		fmt.Printf("\n")
 	}
 }
 
@@ -395,13 +401,17 @@ func (c *Config) ToJson() (string, error) {
 	return string(jsonbytes), err
 }
 
+func (c *Config) GetArgs() map[int]string {
+  return c.args
+}
+
 // SetLevel sets the standard logger level.
 func SetLogLevel(level Level) {
 	log.SetLevel(log.Level(level))
 	log.Debugf("SetLogLevel(): %s", log.GetLevel().String())
 }
 
-func processCommandLine(params map[string]Param) (map[string]string, error) {
+func (c *Config) processCommandLine(params map[string]Param) (map[string]string, error) {
 	args := make(map[string]string) // local map to hold environmental and command-line key-value pairs
 
 	log.Debugf("Processing command-line arguments: %v", os.Args[1:])
@@ -435,10 +445,13 @@ func processCommandLine(params map[string]Param) (map[string]string, error) {
 			}
 		}
 		if !match {
-			log.Debugf("----> No match.")
-			err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
-			log.Errorf(err.Error()) // send to syslog
-			return nil, err         // instead of returning the current config object, let's be more deterministic and return an empty Config struct
+			log.Debugf("len(c.args) = %v\n", len(c.args))
+			c.args[len(c.args) + 1] = os.Args[i]
+			log.Debugf("len(c.args) = %v\n", len(c.args))
+			//log.Debugf("----> No match.")
+			//err := fmt.Errorf("'%s' is not a supported flag.", os.Args[i])
+			//log.Errorf(err.Error()) // send to syslog
+			//return nil, err         // instead of returning the current config object, let's be more deterministic and return an empty Config struct
 		}
 	}
 
@@ -487,7 +500,9 @@ func isCommandLineUsageTypeTrue(args map[string]string, config *Config) (bool, e
 }
 
 func GetBoolFromCommandLine(param string, params map[string]Param) bool {
-	args, err := processCommandLine(params)
+	config := Config{values: make(map[string]interface{}), params: params, args: make(map[int]string)} // initialize the return value
+
+	args, err := config.processCommandLine(params)
 	if err != nil {
 		return false
 	}
