@@ -4,7 +4,7 @@ import "os"
 import "fmt"
 import "reflect"
 import "time"
-import "github.com/polyverse-security/appconfig"
+import "github.com/polyverse/appconfig"
 
 func main() {
 	// Set logging level to Debug so we can see all the Debug messages from polyverse-security/appconfig
